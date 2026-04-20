@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { onAuthStateChanged, signInWithPopup, User } from "firebase/auth";
 import { addDoc, collection } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { categories } from "@/lib/seed";
-import { db, isFirebaseConfigured, storage } from "@/lib/firebase";
+import { auth, db, googleProvider, isFirebaseConfigured, storage } from "@/lib/firebase";
 import { slugify } from "@/lib/utils";
 
 type FormState = {
@@ -44,13 +45,34 @@ const initialState: FormState = {
 };
 
 export function SubmitForm() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(initialState);
   const [proof, setProof] = useState<File | null>(null);
   const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const progress = useMemo(() => `${step}/5`, [step]);
+
+  useEffect(() => {
+    if (!auth) {
+      setAuthChecked(true);
+      return;
+    }
+
+    return onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthChecked(true);
+      if (currentUser?.email) {
+        setForm((current) => ({
+          ...current,
+          founderEmail: current.founderEmail || currentUser.email || ""
+        }));
+      }
+    });
+  }, []);
 
   function update<Key extends keyof FormState>(key: Key, value: FormState[Key]) {
     setForm((current) => ({
@@ -62,6 +84,13 @@ export function SubmitForm() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError("");
+
+    if (!user) {
+      setError("Not authenticated");
+      return;
+    }
+
     if (step < 5) {
       setStep((current) => current + 1);
       return;
@@ -73,28 +102,26 @@ export function SubmitForm() {
     }
 
     if (!isFirebaseConfigured || !db || !storage) {
-      setStatus("Firebase env variables are missing. Add them to submit live data.");
+      setError("Firebase env variables are missing. Add them to submit live data.");
       return;
     }
 
     setIsSubmitting(true);
     setStatus("Uploading proof and saving your submission...");
+    setError("");
 
     try {
-      let proofImageUrl = "";
       const now = new Date().toISOString();
+      const slug = form.slug || slugify(form.name);
+      const proofImageUrl = proof ? await uploadProofImage(proof, slug) : "";
 
-      if (proof) {
-        const proofRef = ref(storage, `proofs/${form.slug || slugify(form.name)}-${Date.now()}-${proof.name}`);
-        await uploadBytes(proofRef, proof);
-        proofImageUrl = await getDownloadURL(proofRef);
-      }
-
-      await addDoc(collection(db, "startups"), {
-        slug: form.slug || slugify(form.name),
+      const submission = {
+        slug,
         name: form.name,
         founderName: form.founderName,
         founderEmail: form.founderEmail,
+        submittedByUid: user.uid,
+        submittedByEmail: user.email ?? "",
         website: form.website,
         tagline: form.tagline,
         description: form.description,
@@ -102,10 +129,13 @@ export function SubmitForm() {
         country: form.country,
         city: form.city,
         pricingModel: form.pricingModel,
+        revenue: Number(form.revenue30d),
         revenue30d: Number(form.revenue30d),
         mrr: Number(form.mrr),
         growthPercent: Number(form.growthPercent),
+        status: proofImageUrl ? "proof_uploaded" : "unverified",
         verificationStatus: proofImageUrl ? "proof_uploaded" : "unverified",
+        proofUrl: proofImageUrl,
         proofImageUrl,
         proofUpdatedAt: proofImageUrl ? now : "",
         featured: false,
@@ -113,17 +143,78 @@ export function SubmitForm() {
         rejected: false,
         createdAt: now,
         updatedAt: now
-      });
+      };
+
+      try {
+        console.log("[ProofPe Submit] Firestore write start", {
+          slug,
+          uid: user.uid
+        });
+        const docRef = await withTimeout(
+          addDoc(collection(db, "startups"), submission),
+          15000,
+          "Database error"
+        );
+        console.log("[ProofPe Submit] Firestore write success", docRef.id);
+      } catch (databaseError) {
+        console.error("[ProofPe Submit] Firestore write fail", databaseError);
+        throw new Error("Database error");
+      }
 
       setForm(initialState);
       setProof(null);
       setStep(1);
       setStatus("Submitted. Your profile is pending internal review.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Submission failed. Please try again.");
+      const message = error instanceof Error ? error.message : "Submission failed. Please try again.";
+      setStatus("");
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function login() {
+    setError("");
+
+    if (!auth) {
+      setError("Firebase env variables are missing. Add them to submit live data.");
+      return;
+    }
+
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (loginError) {
+      console.error("[ProofPe Auth] Google login failed", loginError);
+      setError("Not authenticated");
+    }
+  }
+
+  if (!authChecked) {
+    return (
+      <div className="rounded-lg border border-black/10 bg-white p-6 shadow-premium">
+        <p className="text-sm font-black text-steel">Checking sign-in status...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="rounded-lg border border-black/10 bg-white p-6 shadow-premium">
+        <h2 className="text-2xl font-black">Sign in with Google to submit your startup</h2>
+        <p className="mt-3 text-sm leading-6 text-steel">
+          ProofPe requires founder sign-in before revenue proof can be submitted.
+        </p>
+        <button
+          type="button"
+          onClick={login}
+          className="mt-5 rounded-lg bg-ink px-5 py-3 text-sm font-black text-white hover:bg-mint"
+        >
+          Sign in with Google
+        </button>
+        {error ? <p className="mt-5 text-sm font-bold text-coral">{error}</p> : null}
+      </div>
+    );
   }
 
   return (
@@ -217,13 +308,57 @@ export function SubmitForm() {
           </button>
         ) : null}
         <button disabled={isSubmitting} className="rounded-lg bg-ink px-5 py-3 text-sm font-black text-white hover:bg-mint disabled:cursor-not-allowed disabled:opacity-60">
-          {step === 5 ? "Submit startup" : "Continue"}
+          {isSubmitting ? "Submitting..." : step === 5 ? "Submit startup" : "Continue"}
         </button>
       </div>
 
       {status ? <p className="mt-5 text-sm font-bold text-mint">{status}</p> : null}
+      {error ? <p className="mt-5 text-sm font-bold text-coral">{error}</p> : null}
     </form>
   );
+}
+
+async function uploadProofImage(file: File, slug: string) {
+  if (!storage) throw new Error("Upload failed");
+
+  try {
+    console.log("[ProofPe Submit] Upload start", {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    });
+
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const proofRef = ref(storage, `proofs/${slug}-${Date.now()}-${safeFileName}`);
+    const snapshot = await withTimeout(
+      uploadBytes(proofRef, file, { contentType: file.type }),
+      20000,
+      "Upload failed"
+    );
+    const downloadUrl = await withTimeout(
+      getDownloadURL(snapshot.ref),
+      10000,
+      "Upload failed"
+    );
+
+    console.log("[ProofPe Submit] Upload success", downloadUrl);
+    return downloadUrl;
+  } catch (uploadError) {
+    console.error("[ProofPe Submit] Upload fail", uploadError);
+    throw new Error("Upload failed");
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
 }
 
 const stepTitles = [

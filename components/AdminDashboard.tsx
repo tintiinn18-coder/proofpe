@@ -12,6 +12,7 @@ type Filter = "pending" | "approved" | "rejected" | "all";
 
 export function AdminDashboard() {
   const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [startups, setStartups] = useState<Startup[]>([]);
   const [filter, setFilter] = useState<Filter>("pending");
 
@@ -22,8 +23,15 @@ export function AdminDashboard() {
   const isAllowed = Boolean(user?.email && allowedEmails.includes(user.email.toLowerCase()));
 
   useEffect(() => {
-    if (!auth) return;
-    return onAuthStateChanged(auth, setUser);
+    if (!auth) {
+      setAuthChecked(true);
+      return;
+    }
+
+    return onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthChecked(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -38,7 +46,11 @@ export function AdminDashboard() {
 
   async function login() {
     if (!auth) return;
-    await signInWithPopup(auth, googleProvider);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("[ProofPe Admin] Google login failed", error);
+    }
   }
 
   async function patchStartup(id: string, data: Partial<Startup>) {
@@ -83,6 +95,10 @@ export function AdminDashboard() {
     return <AdminNotice title="Firebase is not configured" body="Add Firebase env variables before using the admin dashboard." />;
   }
 
+  if (!authChecked) {
+    return <AdminNotice title="Admin sign in" body="Checking access..." />;
+  }
+
   if (!user) {
     return (
       <AdminNotice title="Admin sign in" body="Use a Google account listed in NEXT_PUBLIC_ADMIN_EMAILS.">
@@ -95,7 +111,7 @@ export function AdminDashboard() {
 
   if (!isAllowed) {
     return (
-      <AdminNotice title="Not allowed" body={`${user.email ?? "This account"} is not on the admin allowlist.`}>
+      <AdminNotice title="Access denied" body={`${user.email ?? "This account"} is not on the admin allowlist.`}>
         <button onClick={() => auth && signOut(auth)} className="mt-5 rounded-lg border border-black/10 px-5 py-3 text-sm font-black">
           Sign out
         </button>
