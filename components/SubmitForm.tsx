@@ -1,7 +1,16 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, signInWithPopup, User } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
+import {
+  browserLocalPersistence,
+  getRedirectResult,
+  onAuthStateChanged,
+  setPersistence,
+  signInWithPopup,
+  signInWithRedirect,
+  User
+} from "firebase/auth";
 import { addDoc, collection } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { categories } from "@/lib/seed";
@@ -62,7 +71,30 @@ export function SubmitForm() {
       return;
     }
 
+    const firebaseAuth = auth;
+
+    setPersistence(firebaseAuth, browserLocalPersistence)
+      .then(() => getRedirectResult(firebaseAuth))
+      .then((result) => {
+        if (result?.user) {
+          console.log("[ProofPe Auth] Google redirect success", {
+            uid: result.user.uid,
+            email: result.user.email
+          });
+          setUser(result.user);
+          setError("");
+        }
+      })
+      .catch((redirectError) => {
+        console.error("[ProofPe Auth] Google redirect failed", redirectError);
+        setError(getAuthErrorMessage(redirectError));
+      });
+
     return onAuthStateChanged(auth, (currentUser) => {
+      console.log("[ProofPe Auth] Auth state changed", {
+        signedIn: Boolean(currentUser),
+        email: currentUser?.email ?? null
+      });
       setUser(currentUser);
       setAuthChecked(true);
       if (currentUser?.email) {
@@ -176,17 +208,46 @@ export function SubmitForm() {
 
   async function login() {
     setError("");
+    setStatus("");
 
-    if (!auth) {
+    if (!isFirebaseConfigured || !auth) {
       setError("Firebase env variables are missing. Add them to submit live data.");
       return;
     }
 
     try {
-      await signInWithPopup(auth, googleProvider);
+      setStatus("Opening Google sign-in...");
+      await setPersistence(auth, browserLocalPersistence);
+      const result = await signInWithPopup(auth, googleProvider);
+      console.log("[ProofPe Auth] Google popup success", {
+        uid: result.user.uid,
+        email: result.user.email
+      });
+      setUser(result.user);
+      setError("");
+      setStatus("");
     } catch (loginError) {
       console.error("[ProofPe Auth] Google login failed", loginError);
-      setError("Not authenticated");
+      const message = getAuthErrorMessage(loginError);
+
+      if (
+        loginError instanceof FirebaseError &&
+        ["auth/popup-blocked", "auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(loginError.code)
+      ) {
+        try {
+          setStatus("Redirecting to Google sign-in...");
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (redirectError) {
+          console.error("[ProofPe Auth] Google redirect start failed", redirectError);
+          setStatus("");
+          setError(getAuthErrorMessage(redirectError));
+          return;
+        }
+      }
+
+      setStatus("");
+      setError(message);
     }
   }
 
@@ -208,10 +269,17 @@ export function SubmitForm() {
         <button
           type="button"
           onClick={login}
+          disabled={!isFirebaseConfigured}
           className="mt-5 rounded-lg bg-ink px-5 py-3 text-sm font-black text-white hover:bg-mint"
         >
           Sign in with Google
         </button>
+        {!isFirebaseConfigured ? (
+          <p className="mt-5 text-sm font-bold text-coral">
+            Firebase env variables are missing. Add them in .env.local and restart the dev server.
+          </p>
+        ) : null}
+        {status ? <p className="mt-5 text-sm font-bold text-mint">{status}</p> : null}
         {error ? <p className="mt-5 text-sm font-bold text-coral">{error}</p> : null}
       </div>
     );
@@ -359,6 +427,39 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   return Promise.race([promise, timeout]).finally(() => {
     if (timeoutId) clearTimeout(timeoutId);
   });
+}
+
+function getAuthErrorMessage(error: unknown) {
+  if (!(error instanceof FirebaseError)) {
+    if (error instanceof Error && error.message) {
+      return `Google sign-in failed: ${error.message}`;
+    }
+
+    return "Google sign-in failed. Check Firebase Auth configuration.";
+  }
+
+  const messages: Record<string, string> = {
+    "auth/unauthorized-domain":
+      "Google sign-in failed: this domain is not authorized in Firebase Auth.",
+    "auth/operation-not-allowed":
+      "Google sign-in failed: enable Google provider in Firebase Auth.",
+    "auth/invalid-api-key":
+      "Google sign-in failed: Firebase API key is invalid.",
+    "auth/api-key-not-valid":
+      "Google sign-in failed: Firebase API key is invalid.",
+    "auth/popup-blocked":
+      "Google sign-in popup was blocked. Redirect sign-in is starting.",
+    "auth/popup-closed-by-user":
+      "Google sign-in was closed before completion.",
+    "auth/cancelled-popup-request":
+      "Google sign-in was cancelled. Try again.",
+    "auth/network-request-failed":
+      "Google sign-in failed because of a network error.",
+    "auth/configuration-not-found":
+      "Google sign-in failed: Firebase Auth is not configured for this project."
+  };
+
+  return messages[error.code] ?? `Google sign-in failed: ${error.code}`;
 }
 
 const stepTitles = [

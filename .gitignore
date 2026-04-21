@@ -3,6 +3,8 @@
 .next
 .next-dev.*
 .npm-cache
+.appdata
+.localappdata
 node_modules
 dist
 out
