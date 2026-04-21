@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FirebaseError } from "firebase/app";
 import {
   browserLocalPersistence,
@@ -15,6 +16,7 @@ import { addDoc, collection } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { categories } from "@/lib/seed";
 import { auth, db, googleProvider, isFirebaseConfigured, storage } from "@/lib/firebase";
+import type { ListingType } from "@/lib/types";
 import { slugify } from "@/lib/utils";
 
 type FormState = {
@@ -32,6 +34,8 @@ type FormState = {
   revenue30d: string;
   mrr: string;
   growthPercent: string;
+  listingType: ListingType;
+  askingPrice: string;
   consent: boolean;
 };
 
@@ -50,10 +54,13 @@ const initialState: FormState = {
   revenue30d: "",
   mrr: "",
   growthPercent: "",
+  listingType: "directory",
+  askingPrice: "",
   consent: false
 };
 
 export function SubmitForm() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [step, setStep] = useState(1);
@@ -179,13 +186,18 @@ export function SubmitForm() {
         revenue30d: Number(form.revenue30d),
         mrr: Number(form.mrr),
         growthPercent: Number(form.growthPercent),
+        listingType: form.listingType,
+        askingPrice:
+          form.listingType === "directory" || !form.askingPrice
+            ? null
+            : Number(form.askingPrice),
         status: verificationStatus,
         verificationStatus,
         proofUrl: proofImageUrl,
         proofImageUrl,
         proofUpdatedAt: proofImageUrl ? now : "",
         featured: false,
-        approved: false,
+        approved: true,
         rejected: false,
         createdAt: now,
         updatedAt: now
@@ -207,14 +219,11 @@ export function SubmitForm() {
         throw new Error("Database error");
       }
 
-      setForm(initialState);
-      setProof(null);
-      setStep(1);
-      setStatus(
-        proofImageUrl
-          ? "Submitted. Your profile is pending internal review."
-          : "Submitted. Your profile was saved without screenshot proof and is pending internal review."
-      );
+      const submissionMessage = proofImageUrl
+        ? "Submitted. Your profile is now live on ProofPe."
+        : "Submitted. Your profile is live, and you can add screenshot proof later.";
+      setStatus(submissionMessage);
+      router.push(`/startup/${encodeURIComponent(slug)}?submitted=1`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Submission failed. Please try again.";
       setStatus("");
@@ -352,6 +361,26 @@ export function SubmitForm() {
             <Field label="Revenue (30 days)" value={form.revenue30d} onChange={(value) => update("revenue30d", value)} required type="number" />
             <Field label="MRR" value={form.mrr} onChange={(value) => update("mrr", value)} required type="number" />
             <Field label="Growth %" value={form.growthPercent} onChange={(value) => update("growthPercent", value)} required type="number" />
+            <label className="text-sm font-black text-steel">
+              Listing type
+              <select
+                value={form.listingType}
+                onChange={(event) => update("listingType", event.target.value as ListingType)}
+                className="mt-2 w-full rounded-lg border border-black/10 px-4 py-3 text-ink outline-none focus:border-mint"
+              >
+                <option value="directory">Open revenue profile</option>
+                <option value="for_sale">Startup is for sale</option>
+                <option value="wanted">Looking to buy startups</option>
+              </select>
+            </label>
+            {form.listingType !== "directory" ? (
+              <Field
+                label={form.listingType === "for_sale" ? "Asking price" : "Target acquisition budget"}
+                value={form.askingPrice}
+                onChange={(value) => update("askingPrice", value)}
+                type="number"
+              />
+            ) : null}
           </>
         ) : null}
 

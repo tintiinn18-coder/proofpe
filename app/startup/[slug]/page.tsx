@@ -4,6 +4,7 @@ import { seedStartups } from "@/lib/seed";
 
 type Props = {
   params: { slug: string };
+  searchParams?: { submitted?: string };
 };
 
 export function generateStaticParams() {
@@ -34,8 +35,14 @@ export function generateMetadata({ params }: Props): Metadata {
   };
 }
 
-export default function StartupProfilePage({ params }: Props) {
+export default function StartupProfilePage({ params, searchParams }: Props) {
   const startup = seedStartups.find((item) => item.slug === params.slug);
 
-  return <StartupProfileClient initialStartup={startup} slug={params.slug} />;
+  return (
+    <StartupProfileClient
+      initialStartup={startup}
+      slug={params.slug}
+      justSubmitted={searchParams?.submitted === "1"}
+    />
+  );
 }

@@ -1,5 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
-import type { VerificationStatus } from "@/lib/types";
+import type { ListingType, VerificationStatus } from "@/lib/types";
 
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
@@ -22,6 +22,17 @@ export function formatDate(value?: string) {
   }).format(new Date(value));
 }
 
+export function formatCompactINR(value?: number | null) {
+  if (!value) return "Ask privately";
+
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    notation: "compact",
+    maximumFractionDigits: 1
+  }).format(value);
+}
+
 export function statusLabel(status: VerificationStatus) {
   const labels: Record<VerificationStatus, string> = {
     verified: "Verified",
@@ -39,4 +50,14 @@ export function slugify(value: string) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export function listingLabel(type: ListingType) {
+  const labels: Record<ListingType, string> = {
+    directory: "Open Revenue",
+    for_sale: "For Sale",
+    wanted: "Looking to Buy"
+  };
+
+  return labels[type];
 }

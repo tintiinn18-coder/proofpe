@@ -4,11 +4,20 @@ import { useEffect, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { ExternalLink, Share2 } from "lucide-react";
 import { VerificationBadge } from "@/components/Badge";
+import { ListingBadge } from "@/components/ListingBadge";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import type { Startup } from "@/lib/types";
-import { formatDate, formatINR } from "@/lib/utils";
+import { formatCompactINR, formatDate, formatINR } from "@/lib/utils";
 
-export function StartupProfileClient({ initialStartup, slug }: { initialStartup?: Startup; slug: string }) {
+export function StartupProfileClient({
+  initialStartup,
+  slug,
+  justSubmitted = false
+}: {
+  initialStartup?: Startup;
+  slug: string;
+  justSubmitted?: boolean;
+}) {
   const [startup, setStartup] = useState<Startup | undefined>(initialStartup);
   const [shared, setShared] = useState(false);
 
@@ -20,7 +29,7 @@ export function StartupProfileClient({ initialStartup, slug }: { initialStartup?
       );
       const match = snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }) as Startup)
-        .find((item) => item.approved && !item.rejected);
+        .find((item) => !item.rejected);
       if (match) setStartup(match);
     }
 
@@ -32,7 +41,7 @@ export function StartupProfileClient({ initialStartup, slug }: { initialStartup?
       <section className="container-shell py-14">
         <div className="rounded-lg border border-black/10 bg-white p-8 shadow-premium">
           <h1 className="text-3xl font-black">Startup not found</h1>
-          <p className="mt-3 text-steel">This profile may still be pending review.</p>
+          <p className="mt-3 text-steel">This profile is not live yet, or the slug is incorrect.</p>
         </div>
       </section>
     );
@@ -50,6 +59,11 @@ export function StartupProfileClient({ initialStartup, slug }: { initialStartup?
 
   return (
     <section className="container-shell py-12">
+      {justSubmitted ? (
+        <div className="mb-6 rounded-lg border border-mint/20 bg-mint/10 px-5 py-4 text-sm font-bold text-mint">
+          Your startup is live. Share this profile and come back later to add proof for a stronger trust signal.
+        </div>
+      ) : null}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="rounded-lg border border-black/10 bg-white p-6 shadow-premium md:p-8">
           <div className="flex flex-wrap items-start justify-between gap-5">
@@ -60,9 +74,12 @@ export function StartupProfileClient({ initialStartup, slug }: { initialStartup?
               <div>
                 <h1 className="text-4xl font-black tracking-tight">{startup.name}</h1>
                 <p className="mt-2 text-steel">{startup.tagline}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <ListingBadge type={startup.listingType ?? "directory"} />
+                  <VerificationBadge status={startup.verificationStatus} />
+                </div>
               </div>
             </div>
-            <VerificationBadge status={startup.verificationStatus} />
           </div>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -70,6 +87,17 @@ export function StartupProfileClient({ initialStartup, slug }: { initialStartup?
             <Metric label="MRR" value={formatINR(startup.mrr)} />
             <Metric label="Growth" value={`+${startup.growthPercent}%`} />
           </div>
+
+          {startup.listingType !== "directory" ? (
+            <div className="mt-6 rounded-lg border border-black/10 bg-paper p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-steel">
+                {startup.listingType === "for_sale" ? "Asking price" : "Acquisition budget"}
+              </p>
+              <p className="mt-2 text-2xl font-black">
+                {formatCompactINR(startup.askingPrice)}
+              </p>
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <h2 className="text-xl font-black">Description</h2>
@@ -97,6 +125,12 @@ export function StartupProfileClient({ initialStartup, slug }: { initialStartup?
             >
               Visit website <ExternalLink className="h-4 w-4" />
             </a>
+            <a
+              href={`mailto:${startup.founderEmail ?? "support@proofpe.com"}?subject=${encodeURIComponent(`Inquiry about ${startup.name}`)}`}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm font-black hover:border-mint hover:text-mint"
+            >
+              Contact founder
+            </a>
             <button
               onClick={shareProfile}
               className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm font-black hover:border-mint hover:text-mint"
@@ -107,10 +141,13 @@ export function StartupProfileClient({ initialStartup, slug }: { initialStartup?
           </div>
 
           <div className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
-            <h2 className="font-black">Claim profile</h2>
+            <h2 className="font-black">Deal status</h2>
             <p className="mt-3 text-sm leading-6 text-steel">
-              Founder claim flow is coming soon. For now, contact support@proofpe.com
-              from your company email.
+              {startup.listingType === "for_sale"
+                ? "This startup is open to acquisition conversations. Reach out through the founder email or website."
+                : startup.listingType === "wanted"
+                  ? "This founder is looking to buy startups or profitable internet businesses."
+                  : "This listing is an open revenue profile meant for discovery, trust, and inbound interest."}
             </p>
           </div>
 

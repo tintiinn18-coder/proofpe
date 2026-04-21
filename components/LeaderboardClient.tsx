@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import Link from "next/link";
 import { VerificationBadge } from "@/components/Badge";
+import { ListingBadge } from "@/components/ListingBadge";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { categories, seedStartups } from "@/lib/seed";
 import type { Startup, VerificationStatus } from "@/lib/types";
-import { formatINR } from "@/lib/utils";
+import { formatCompactINR, formatINR } from "@/lib/utils";
 
 type SortKey = "revenue" | "mrr" | "growth" | "newest";
 
@@ -26,7 +27,7 @@ export function LeaderboardClient() {
       );
       const live = snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }) as Startup)
-        .filter((startup) => startup.approved && !startup.rejected);
+        .filter((startup) => !startup.rejected);
       if (live.length > 0) setStartups(live);
     }
 
@@ -93,10 +94,12 @@ export function LeaderboardClient() {
               <tr>
                 <th className="px-5 py-4">Rank</th>
                 <th className="px-5 py-4">Startup Name</th>
+                <th className="px-5 py-4">Listing</th>
                 <th className="px-5 py-4">Founder</th>
                 <th className="px-5 py-4">Category</th>
                 <th className="px-5 py-4">30-day Revenue</th>
                 <th className="px-5 py-4">MRR</th>
+                <th className="px-5 py-4">Ask</th>
                 <th className="px-5 py-4">Growth</th>
                 <th className="px-5 py-4">Badge</th>
               </tr>
@@ -111,10 +114,18 @@ export function LeaderboardClient() {
                     </Link>
                     <p className="text-sm text-steel">{startup.city}</p>
                   </td>
+                  <td className="px-5 py-4">
+                    <ListingBadge type={startup.listingType ?? "directory"} />
+                  </td>
                   <td className="px-5 py-4 text-sm font-semibold">{startup.founderName}</td>
                   <td className="px-5 py-4 text-sm">{startup.category}</td>
                   <td className="px-5 py-4 font-black">{formatINR(startup.revenue30d)}</td>
                   <td className="px-5 py-4 font-bold">{formatINR(startup.mrr)}</td>
+                  <td className="px-5 py-4 text-sm font-bold">
+                    {startup.listingType === "directory"
+                      ? "-"
+                      : formatCompactINR(startup.askingPrice)}
+                  </td>
                   <td className="px-5 py-4 font-bold text-mint">+{startup.growthPercent}%</td>
                   <td className="px-5 py-4">
                     <VerificationBadge status={startup.verificationStatus} />

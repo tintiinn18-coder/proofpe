@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 const links = [
+  { href: "/", label: "Marketplace" },
   { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/submit", label: "Submit" },
+  { href: "/submit", label: "Sell" },
   { href: "/pricing", label: "Pricing" },
   { href: "/about", label: "About" }
 ];
@@ -30,7 +31,7 @@ export function Header() {
           href="/submit"
           className="rounded-lg bg-ink px-4 py-2 text-sm font-bold text-white shadow-premium hover:bg-mint"
         >
-          Get ranked
+          List startup
         </Link>
       </div>
     </header>

@@ -3,7 +3,7 @@ import { SubmitForm } from "@/components/SubmitForm";
 
 export const metadata: Metadata = {
   title: "Submit Startup",
-  description: "Submit your startup revenue, MRR, growth, and proof screenshot to ProofPe.",
+  description: "List your startup on ProofPe with revenue, MRR, growth, and an optional proof screenshot.",
   alternates: { canonical: "/submit" }
 };
 
@@ -13,11 +13,12 @@ export default function SubmitPage() {
       <div>
         <p className="text-sm font-black uppercase tracking-wide text-mint">Submit startup</p>
         <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-6xl">
-          Show real traction with proof.
+          List your startup like a real market asset.
         </h1>
         <p className="mt-5 text-lg leading-8 text-steel">
-          Upload a revenue screenshot, enter the numbers you want to publish,
-          and get reviewed for the ProofPe leaderboard.
+          Publish your revenue, MRR, growth, and listing intent. Add screenshot
+          proof when available, then use your public profile to attract buyers,
+          partners, and trust.
         </p>
       </div>
       <SubmitForm />
