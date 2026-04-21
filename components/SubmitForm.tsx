@@ -61,6 +61,7 @@ export function SubmitForm() {
   const [proof, setProof] = useState<File | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const progress = useMemo(() => `${step}/5`, [step]);
@@ -117,6 +118,7 @@ export function SubmitForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setWarning("");
 
     if (!user) {
       setError("Not authenticated");
@@ -141,11 +143,23 @@ export function SubmitForm() {
     setIsSubmitting(true);
     setStatus("Uploading proof and saving your submission...");
     setError("");
+    setWarning("");
 
     try {
       const now = new Date().toISOString();
       const slug = form.slug || slugify(form.name);
-      const proofImageUrl = proof ? await uploadProofImage(proof, slug) : "";
+      let proofImageUrl = "";
+      let verificationStatus: "proof_uploaded" | "unverified" = "unverified";
+
+      if (proof) {
+        try {
+          proofImageUrl = await uploadProofImage(proof, slug);
+          verificationStatus = "proof_uploaded";
+        } catch (uploadError) {
+          console.error("[ProofPe Submit] Continuing without proof image", uploadError);
+          setWarning("Submission saved without screenshot proof because upload is unavailable right now.");
+        }
+      }
 
       const submission = {
         slug,
@@ -165,8 +179,8 @@ export function SubmitForm() {
         revenue30d: Number(form.revenue30d),
         mrr: Number(form.mrr),
         growthPercent: Number(form.growthPercent),
-        status: proofImageUrl ? "proof_uploaded" : "unverified",
-        verificationStatus: proofImageUrl ? "proof_uploaded" : "unverified",
+        status: verificationStatus,
+        verificationStatus,
         proofUrl: proofImageUrl,
         proofImageUrl,
         proofUpdatedAt: proofImageUrl ? now : "",
@@ -196,7 +210,11 @@ export function SubmitForm() {
       setForm(initialState);
       setProof(null);
       setStep(1);
-      setStatus("Submitted. Your profile is pending internal review.");
+      setStatus(
+        proofImageUrl
+          ? "Submitted. Your profile is pending internal review."
+          : "Submitted. Your profile was saved without screenshot proof and is pending internal review."
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Submission failed. Please try again.";
       setStatus("");
@@ -342,13 +360,13 @@ export function SubmitForm() {
             <label className="rounded-lg border border-dashed border-black/20 bg-paper p-6 text-sm font-black text-steel">
               Upload screenshot
               <input
-                required
                 type="file"
                 accept="image/*"
                 onChange={(event) => setProof(event.target.files?.[0] ?? null)}
                 className="mt-4 block w-full text-sm"
               />
               {proof ? <span className="mt-3 block text-mint">{proof.name}</span> : null}
+              {!proof ? <span className="mt-3 block text-steel">Optional for now</span> : null}
             </label>
             <div className="rounded-lg border border-black/10 p-4 text-sm font-bold text-steel">Razorpay connect: coming soon</div>
             <div className="rounded-lg border border-black/10 p-4 text-sm font-bold text-steel">Stripe connect: coming soon</div>
@@ -381,6 +399,7 @@ export function SubmitForm() {
       </div>
 
       {status ? <p className="mt-5 text-sm font-bold text-mint">{status}</p> : null}
+      {warning ? <p className="mt-5 text-sm font-bold text-gold">{warning}</p> : null}
       {error ? <p className="mt-5 text-sm font-bold text-coral">{error}</p> : null}
     </form>
   );
